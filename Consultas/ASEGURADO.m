@@ -11,7 +11,7 @@ let
                 let
                     Values = List.Transform(_, (v) => Text.Upper(Text.Trim(if v = null then "" else Text.From(v))))
                 in
-                    List.Contains(Values, "REGISTRO") or List.Contains(Values, "COD CBS")
+                    List.Contains(Values, "REGISTRO") or List.Contains(Values, "COD CBS") or (List.Contains(Values, "ORDEN") and List.Contains(Values, "CBS"))
             ),
             HeaderIndex = List.PositionOf(HeaderFlags, true),
             Skipped = if NeedsPromotion and HeaderIndex >= 0 then Table.Skip(table, HeaderIndex) else table,
@@ -44,6 +44,73 @@ let
         in
             c & " - " & FixedName,
 
+    NormalizeHeader = (name as any) as text =>
+        let
+            txt = Text.Upper(Text.Trim(if name = null then "" else Text.From(name))),
+            repl = {
+                {"Á","A"},{"É","E"},{"Í","I"},{"Ó","O"},{"Ú","U"},{"Ñ","N"},
+                {"#(00C1)","A"},{"#(00C9)","E"},{"#(00CD)","I"},{"#(00D3)","O"},{"#(00DA)","U"},{"#(00D1)","N"}
+            },
+            clean = List.Accumulate(repl, txt, (state, current) => Text.Replace(state, current{0}, current{1})),
+            result = Text.Select(clean, {"A".."Z", "0".."9"})
+        in
+            result,
+
+    GetColumn = (table as table, candidates as list, position as number) as list =>
+        let
+            cols = Table.ColumnNames(table),
+            normalizedCandidates = List.Transform(candidates, each NormalizeHeader(_)),
+            match = List.First(List.Select(cols, each List.Contains(normalizedCandidates, NormalizeHeader(_))), null),
+            result =
+                if match <> null then Table.Column(table, match)
+                else if List.Count(cols) > position then Table.Column(table, cols{position})
+                else List.Repeat({null}, Table.RowCount(table))
+        in
+            result,
+
+    NormalizeAsegurado = (table as table) as table =>
+        Table.FromColumns({
+            GetColumn(table, {"Codigo Proyecto", "Cod Proyecto", "Proyecto"}, 0),
+            GetColumn(table, {"Nombre Proyecto"}, 1),
+            GetColumn(table, {"Paquete de Trabajo"}, 2),
+            GetColumn(table, {"Cod CBS", "CBS"}, 3),
+            GetColumn(table, {"Descripción", "Descripcion"}, 4),
+            GetColumn(table, {"Articulo", "Artículo"}, 5),
+            GetColumn(table, {"Descripción2", "Descripcion2", "Descripción_1", "Descripcion_1", "Descripción.1", "Descripcion.1"}, 6),
+            GetColumn(table, {"U Medida", "UM"}, 7),
+            GetColumn(table, {"Proceso"}, 8),
+            GetColumn(table, {"Registro"}, 9),
+            GetColumn(table, {"Estado", "Estatus"}, 10),
+            GetColumn(table, {"Cantidad"}, 11),
+            GetColumn(table, {"V.r Unitario", "Vr Unitario", "Valor Unitario"}, 12),
+            GetColumn(table, {"V.r Total", "Vr Total", "Valor Total"}, 13)
+        }, {"Codigo Proyecto", "Nombre Proyecto", "Paquete de Trabajo", "Cod actividad", "Actividad", "Cod ins", "Ins", "U Medida", "Proceso", "Registro", "Estado", "Cantidad", "V.r Unitario", "V.r Total"}),
+
+    NormalizeMovimientos = (table as table, tipo as text) as table =>
+        let
+            CantidadPrincipal = if tipo = "OC"
+                then GetColumn(table, {"Cantidad recepcion", "Cantidad Recepcion", "Recepciones Cantidad", "Cantidad_1", "Cantidad.1"}, 16)
+                else GetColumn(table, {"Cantidad corte", "Cantidad", "Cantidad Orden", "Orden de compra Cantidad"}, 13),
+            ValorPrincipal = if tipo = "OC"
+                then GetColumn(table, {"Valor Recepcion", "Recepciones Valor Recepcion", "Valor Recepcion_1", "Valor Recepcion.1"}, 17)
+                else GetColumn(table, {"Valor Recepcion corte", "Valor Recepcion", "Valor Orden", "Orden de compra Valor Orden"}, 15),
+            NombreCantidad = if tipo = "OC" then "Cantidad recepcion" else "Cantidad corte",
+            NombreValor = if tipo = "OC" then "Valor Recepcion" else "Valor Recepcion corte"
+        in
+            Table.FromColumns({
+                GetColumn(table, {"Orden"}, 0),
+                GetColumn(table, {"Estatus", "Estado"}, 1),
+                GetColumn(table, {"Razon Social", "Razón Social"}, 5),
+                GetColumn(table, {"CBS"}, 7),
+                GetColumn(table, {"Descripcion", "Descripción"}, 8),
+                GetColumn(table, {"Paquete de trabajo", "Paquete de Trabajo"}, 9),
+                GetColumn(table, {"Articulo", "Artículo"}, 10),
+                GetColumn(table, {"Descripcion_1", "Descripción_1", "Descripcion.1", "Descripción.1"}, 11),
+                GetColumn(table, {"Titulo", "Título"}, 12),
+                CantidadPrincipal,
+                ValorPrincipal
+            }, {"Orden", "Estatus", "Razon Social", "CBS", "Actividad", "Paquete de trabajo", "Articulo", "Ins", "Titulo", NombreCantidad, NombreValor}),
+
     // ===============================================================
     // 2. PREPARAR TABLAS BASE
     // ===============================================================
@@ -56,29 +123,26 @@ let
     }),
 
     // --- ASEGURADO ---
-    Src_Asegurado = FixHeaders(SP_Fuentes[ASEGURADO]),
-    Renamed_Aseg = Table.RenameColumns(Src_Asegurado,{
-        {"Cod CBS", "Cod actividad"}, {"Descripción", "Actividad"},
-        {"Articulo", "Cod ins"}, {"Descripción2", "Ins"}
-    }, MissingField.Ignore),
+    Src_Asegurado = NormalizeAsegurado(FixHeaders(SP_Fuentes[ASEGURADO])),
+    Renamed_Aseg = Src_Asegurado,
     Clean_Aseg = Table.TransformColumns(Renamed_Aseg, {
         {"Registro", CleanKey}, {"Cod ins", CleanKey}, {"Paquete de Trabajo", CleanKey}, {"Cod actividad", CleanKey}
-    }),
+    }, null, MissingField.UseNull),
     Filtered_Aseg = Table.SelectRows(Clean_Aseg, each [Proceso] <> "COSTOS DISTRIBUIBLES" and [Proceso] <> "TRANSFERENCIA"),
 
     // --- CONTRATO ---
-    Src_Contrato = FixHeaders(SP_Fuentes[CONTRATOS]),
+    Src_Contrato = NormalizeMovimientos(FixHeaders(SP_Fuentes[CONTRATOS]), "CONTRATO"),
     Clean_Contrato = Table.TransformColumns(Src_Contrato, {
         {"Orden", CleanKey}, {"Articulo", CleanKey}, {"Paquete de trabajo", CleanKey}, {"CBS", CleanKey},
         {"Cantidad corte", ToNumberSafe}, {"Valor Recepcion corte", ToNumberSafe}
-    }),
+    }, null, MissingField.UseNull),
 
     // --- OC ---
-    Src_OC = FixHeaders(SP_Fuentes[COMPRAS]),
+    Src_OC = NormalizeMovimientos(FixHeaders(SP_Fuentes[COMPRAS]), "OC"),
     Clean_OC = Table.TransformColumns(Src_OC, {
         {"Orden", CleanKey}, {"Articulo", CleanKey}, {"Paquete de trabajo", CleanKey}, {"CBS", CleanKey},
         {"Cantidad recepcion", ToNumberSafe}, {"Valor Recepcion", ToNumberSafe}
-    }),
+    }, null, MissingField.UseNull),
 
     // ===============================================================
     // 3. DICCIONARIO UNIVERSAL
