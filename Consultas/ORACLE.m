@@ -45,7 +45,7 @@ let
     }),
 
     // --- ASEGURADO ---
-    Src_Asegurado = FixHeaders(Excel.CurrentWorkbook(){[Name = "ASEGURADO"]}[Content]),
+    Src_Asegurado = FixHeaders(SP_ASEGURADO),
     Renamed_Aseg = Table.RenameColumns(Src_Asegurado,{
         {"Cod CBS", "Cod actividad"}, {"Descripción", "Actividad"},
         {"Articulo", "Cod ins"}, {"Descripción2", "Ins"}
@@ -56,14 +56,14 @@ let
     Filtered_Aseg = Table.SelectRows(Clean_Aseg, each [Proceso] <> "COSTOS DISTRIBUIBLES" and [Proceso] <> "TRANSFERENCIA"),
 
     // --- CONTRATO ---
-    Src_Contrato = FixHeaders(Excel.CurrentWorkbook(){[Name="CONTRATO"]}[Content]),
+    Src_Contrato = FixHeaders(SP_CONTRATOS),
     Clean_Contrato = Table.TransformColumns(Src_Contrato, {
         {"Orden", CleanKey}, {"Articulo", CleanKey}, {"Paquete de trabajo", CleanKey}, {"CBS", CleanKey},
         {"Cantidad corte", ToNumberSafe}, {"Valor Recepcion corte", ToNumberSafe}
     }),
 
     // --- OC ---
-    Src_OC = FixHeaders(Excel.CurrentWorkbook(){[Name="OC"]}[Content]),
+    Src_OC = FixHeaders(SP_COMPRAS),
     Clean_OC = Table.TransformColumns(Src_OC, {
         {"Orden", CleanKey}, {"Articulo", CleanKey}, {"Paquete de trabajo", CleanKey}, {"CBS", CleanKey},
         {"Cantidad recepcion", ToNumberSafe}, {"Valor Recepcion", ToNumberSafe}
