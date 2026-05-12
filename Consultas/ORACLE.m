@@ -11,6 +11,8 @@ let
 
     CleanKey = (val) => if val = null then "" else Text.Upper(Text.Clean(Text.Trim(Text.From(val)))),
     ToNumberSafe = (val) => let n = try Number.From(val) otherwise 0 in if n = null then 0 else n,
+    TipoJerarquia = Text.Upper(Text.From(ConfigProyecto[TipoJerarquia])),
+    EsJerarquiaCorta = TipoJerarquia = "CORTA",
 
     // Lógica Anti-Eco para limpiar nombres duplicados tipo "(ML) (ML)"
     CleanString = (code, rawName) =>
@@ -205,10 +207,12 @@ let
         }
     ),
 
+    Calc_VU_P2 = Table.AddColumn(Grouped_Master, "V/U PPTO V2", each if [Cantidad PPTO V2] <> null and [Cantidad PPTO V2] <> 0 then [VT PPTO V2]/[Cantidad PPTO V2] else 0, type nullable number),
+
     // ===============================================================
     // 8. ENRIQUECIMIENTO
     // ===============================================================
-    Join_Act = Table.NestedJoin(Grouped_Master, {"Final_CodAct"}, Master_Act, {"Cod actividad"}, "Ref_A", JoinKind.LeftOuter),
+    Join_Act = Table.NestedJoin(Calc_VU_P2, {"Final_CodAct"}, Master_Act, {"Cod actividad"}, "Ref_A", JoinKind.LeftOuter),
     Exp_Act  = Table.ExpandTableColumn(Join_Act, "Ref_A", {"Actividad_Limpia"}, {"Actividad"}),
 
     Join_Ins = Table.NestedJoin(Exp_Act, {"Final_CodIns"}, Master_Ins, {"Cod ins"}, "Ref_I", JoinKind.LeftOuter),
@@ -232,10 +236,10 @@ let
             CurrentCode = [Final_CodAct],
             Parts = if CurrentCode <> null then Text.Split(CurrentCode, "-") else {},
             Count = List.Count(Parts),
-            NewC1 = if Count > 0 then Parts{0} & "-00-00-00-0000-000" else null,
-            NewC2 = if Count > 1 then Parts{0} & "-" & Parts{1} & "-00-00-0000-000" else null,
-            NewC3 = if Count > 2 then Parts{0} & "-" & Parts{1} & "-" & Parts{2} & "-00-0000-000" else null,
-            NewC4 = if Count > 3 then Parts{0} & "-" & Parts{1} & "-" & Parts{2} & "-" & Parts{3} & "-0000-000" else null
+            NewC1 = if Count > 0 then if EsJerarquiaCorta then Parts{0} & "-00-000" else Parts{0} & "-00-00-00-0000-000" else null,
+            NewC2 = if Count > 1 then if EsJerarquiaCorta then Parts{0} & "-" & Parts{1} & "-000" else Parts{0} & "-" & Parts{1} & "-00-00-0000-000" else null,
+            NewC3 = if EsJerarquiaCorta then null else if Count > 2 then Parts{0} & "-" & Parts{1} & "-" & Parts{2} & "-00-0000-000" else null,
+            NewC4 = if EsJerarquiaCorta then null else if Count > 3 then Parts{0} & "-" & Parts{1} & "-" & Parts{2} & "-" & Parts{3} & "-0000-000" else null
         in
             [
                 C1 = if [Cod CBS 1] = null or [Cod CBS 1] = "" then NewC1 else [Cod CBS 1],
@@ -256,9 +260,9 @@ let
     Calculated_Levels = Table.AddColumn(Final_Filter, "Levels_Final", each [
         N1 = if [Nivel 1] <> null then [Nivel 1] else try [R1]{0}[Nivel 1] otherwise null,
         N2 = if [Nivel 2] <> null then [Nivel 2] else try [R2]{0}[Nivel 2] otherwise null,
-        N3 = if [Nivel 3] <> null then [Nivel 3] else try [R3]{0}[Nivel 3] otherwise null,
+        N3 = if EsJerarquiaCorta then null else if [Nivel 3] <> null then [Nivel 3] else try [R3]{0}[Nivel 3] otherwise null,
         TempN4 = if [Nivel 4] <> null then [Nivel 4] else try [R4]{0}[Nivel 4] otherwise null,
-        N4 = if TempN4 = null then [New_CBS4] & " - OTROS" else TempN4
+        N4 = if EsJerarquiaCorta then null else if TempN4 = null then [New_CBS4] & " - OTROS" else TempN4
     ]),
 
     Expanded_Levels = Table.ExpandRecordColumn(Calculated_Levels, "Levels_Final", {"N1", "N2", "N3", "N4"}),
@@ -283,13 +287,14 @@ let
         "Paquete de Trabajo", "Cod actividad", "Actividad", "Cod ins", "Ins",
         "Razon Social", "Titulo", "Proceso", "# OC / Contrato",
         "Cantidad Asegurado", "V/U Asegurado", "VT Asegurado",
-        "Cantidad PPTO V1", "V/U PPTO V1", "VT PPTO V1"
+        "Cantidad PPTO V1", "V/U PPTO V1", "VT PPTO V1",
+        "Cantidad PPTO V2", "V/U PPTO V2", "VT PPTO V2"
     }, MissingField.Ignore),
 
     // *** FILTRO MODIFICADO: AHORA INCLUYE PRESUPUESTO ***
     Filtered_Output = Table.SelectRows(Sorted_Columns, each ([Proceso] = "CONTRATO" or [Proceso] = "ORDEN DE COMPRA" or [Proceso] = "PRESUPUESTO")),
 
-    Reordered_Final = Table.ReorderColumns(Filtered_Output,{"Paquete de Trabajo", "Cod actividad", "Actividad", "Cod ins", "Ins", "# OC / Contrato", "Razon Social", "Cantidad Asegurado", "V/U Asegurado", "VT Asegurado", "Titulo", "Proceso", "Cantidad PPTO V1", "V/U PPTO V1", "VT PPTO V1"}),
+    Reordered_Final = Table.ReorderColumns(Filtered_Output,{"Paquete de Trabajo", "Cod actividad", "Actividad", "Cod ins", "Ins", "# OC / Contrato", "Razon Social", "Cantidad Asegurado", "V/U Asegurado", "VT Asegurado", "Titulo", "Proceso", "Cantidad PPTO V1", "V/U PPTO V1", "VT PPTO V1", "Cantidad PPTO V2", "V/U PPTO V2", "VT PPTO V2"}),
 
     Final_Sort = Table.Sort(Reordered_Final,{{"Proceso", Order.Ascending}, {"# OC / Contrato", Order.Descending}})
 
