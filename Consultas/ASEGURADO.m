@@ -4,7 +4,18 @@ let
     // ===============================================================
     FixHeaders = (table as table) as table =>
         let
-            Promoted = if Table.ColumnNames(table){0} = "Column1" then Table.PromoteHeaders(table, [PromoteAllScalars=true]) else table,
+            Cols = Table.ColumnNames(table),
+            NeedsPromotion = List.Contains(Cols, "Column1"),
+            Rows = Table.ToRows(table),
+            HeaderFlags = List.Transform(Rows, each
+                let
+                    Values = List.Transform(_, (v) => Text.Upper(Text.Trim(if v = null then "" else Text.From(v))))
+                in
+                    List.Contains(Values, "REGISTRO") or List.Contains(Values, "COD CBS")
+            ),
+            HeaderIndex = List.PositionOf(HeaderFlags, true),
+            Skipped = if NeedsPromotion and HeaderIndex >= 0 then Table.Skip(table, HeaderIndex) else table,
+            Promoted = if NeedsPromotion then Table.PromoteHeaders(Skipped, [PromoteAllScalars=true]) else Skipped,
             CleanNames = Table.TransformColumnNames(Promoted, Text.Trim)
         in
             CleanNames,
