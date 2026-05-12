@@ -6,11 +6,7 @@ Repositorio de consultas Power Query para gestion de costos.
 
 - `ProyectoActual`
 - `ConfigProyecto`
-- `F_Globales`
-- `SP_Archivos_Proyecto`
-- `SP_ASEGURADO`
-- `SP_COMPRAS`
-- `SP_CONTRATOS`
+- `SP_Fuentes`
 - `PRESUPUESTO`
 - `ASEGURADO`
 - `COMPARATIVOS`
@@ -39,7 +35,7 @@ La consulta `ProyectoActual` define que configuracion usar. Valores configurados
 
 ## Origen SharePoint
 
-Las fuentes externas `ASEGURADO`, `COMPRAS` y `CONTRATOS` se leen desde SharePoint con la ruta:
+Las fuentes externas `ASEGURADO`, `COMPRAS` y `CONTRATOS` se leen desde SharePoint mediante `SP_Fuentes`, con la ruta:
 
 `/Departamento Tecnico/COORDINACION DE PRESUPUESTOS/0. Reportes EDT - Control costos interno/<ProyectoActual>/<Centro de Costos>/Actual`
 
